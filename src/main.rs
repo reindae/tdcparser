@@ -3,48 +3,81 @@ use psfparser::binary::parse;
 use psfparser::analysis::transient::TransientData;
 use rust_xlsxwriter::worksheet::Worksheet;
 use rust_xlsxwriter::workbook::Workbook;
+use rust_decimal::Decimal;
+use std::collections::HashMap;
+use std::collections::BTreeMap;
+
+// The parse fn takes the filepath of transient data and outputs a vector of delay-dout pairs.
+fn parse_vec(path: String, delay: f64) -> Vec<(f64, u32)>{
+    let mut parsed_vec: Vec<(f64, u32)> = Vec::new();
+    let mut sum: u32 = 0;
+    let read_bytes = read(path).unwrap();
+    let parse_bytes = parse(&read_bytes).unwrap();
+    let trans_data = TransientData::from_binary(parse_bytes);
+    for i in 0..252 {
+        let name = format!("dout{i}");
+        let dout_i: &Vec<f64> = &trans_data.signals[&name];
+        let probe = *(dout_i.last().unwrap());
+        let dout: u32 = if probe > 1.7 {
+            1
+        } else if probe < 0.1 {
+            0
+        } else {
+            panic!("dout was not close to either 0 or 1");
+        };
+        sum += dout;
+    }
+    parsed_vec.push((delay, sum));
+    parsed_vec
+}
+
+// The aggregate fn takes a parsed vector input and maps vector's delay (val) into one unique code (dout/key) accordingly.
+// Example: [(0.1, 1)] and [(0.2, 1)] -> [1, (0.1, 0.2)]
+fn aggregate(input: &Vec<(f64, u32)>, full_data: &mut BTreeMap<u32, Vec<f64>>) {
+	for (delay, code) in input.iter() {
+		full_data.entry(*code).or_insert_with(Vec::new).push(*delay);
+	}
+}
+
+// The Range struct contains starting and ending point of delay corresponding to each dout.
+// Example: (1, [0.1, 0.15, 0.2]) -> dout = 1, start = 0.1, end = 0.2
+#[derive(Debug)]
+struct Range {
+	start: f64,
+	end: f64
+}
+
+// The extract fn takes the dataset and extract the first and last occurrence of delay for each unique code
+fn extract(full_data: BTreeMap<u32, Vec<f64>>, extracted_data: &mut BTreeMap<u32, Range>) {
+	for (code, delay) in full_data.iter() {
+        let min_delay = delay.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).map(|&x| x).unwrap_or(0.0);
+        let max_delay = delay.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).map(|&x| x).unwrap_or(0.0);
+		extracted_data.insert(*code, Range {
+			start: min_delay,
+			end: max_delay
+		});
+	}
+}
 
 fn main() {
-    let mut workbook = Workbook::new();
-    let mut worksheet = Worksheet::new();
-    let lin_sweep = 2500;
-
-    for sweep_count in 0..lin_sweep+1 {
+    let mut lin_sweep = 2500;
+    let mut full_data: BTreeMap<u32, Vec<f64>> = BTreeMap::new();
+    let mut extracted_data = BTreeMap::new();
+    for sweep_count in 0..=lin_sweep {
+        // STEP 1: Parse number of lin_sweep
         let sweep_count_format = format!("{:03}", sweep_count);
-        // println!("Linear Sweep {sweep_count_format}");
+        let delay = ((sweep_count as f64 * (7.0 / lin_sweep as f64)) * 10f64.powi(4)).round() / 10f64.powi(4);
         let path = format!("/tools/scratch/dwzhang/tdc_sky130_macros/tdc_64/tdc_64_sim.raw/sweepDelay-{sweep_count_format}_stepResponse.tran.tran");
-        let read_bytes = read(path).unwrap();
-        let parse_bytes = parse(&read_bytes).unwrap();
-        let trans_data = TransientData::from_binary(parse_bytes);
+        let parsed_vec: Vec<(f64, u32)> = parse_vec(path, delay);
         
-        let delay: f64 = sweep_count as f64 * (7.0 / lin_sweep as f64);
-        let mut sum = 0;
-        worksheet.write_string(0, 0, "ΔDelay").unwrap();
-        worksheet.write_number(0, sweep_count+1, delay).unwrap();
+        // STEP 2: Aggregate available sweeped data
+        aggregate(&parsed_vec, &mut full_data);
+        // println!("{:?}", full_data);
 
-        // for (c, v) in trans_data.signals.iter() {
-        //     println!("{}", c);
-        // }
-
-        for i in 0..252 {
-            let name = format!("dout{i}");
-            let dout_i: &Vec<f64> = &trans_data.signals[&name];
-            let final_value = *(dout_i.last().unwrap());
-            let final_value_i32: i32 = if final_value > 1.7 {
-                1
-            } else if final_value < 0.1 {
-                0
-            } else {
-                panic!("dout was not close to either 0 or 1");
-            };
-            sum += final_value_i32;
-            worksheet.write_string(i+1, 0, name).unwrap();
-            worksheet.write_number(i+1, sweep_count+1, final_value_i32).unwrap();
-            // println!("dout{i} = {final_value_i32}");
-        }
-        worksheet.write_string(253, 0, "total outputs");
-        worksheet.write_number(253, sweep_count+1, sum).unwrap();
+        // STEP 3: Extract data to get first and last occurrence of each set
+        extract(full_data.clone(), &mut extracted_data);
+        println!("{:?}", extracted_data);
     }
-    workbook.push_worksheet(worksheet);
-    workbook.save("/tools/scratch/dwzhang/tdc_sky130_macros/tdc_64/tdc_sweep_data.xlsx");
+
+
 }
