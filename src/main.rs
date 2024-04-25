@@ -42,6 +42,7 @@ fn aggregate(input: &Vec<(f64, u32)>, full_data: &mut BTreeMap<u32, Vec<f64>>) {
 // The Range struct contains starting and ending point of delay corresponding to each dout.
 // Example: (1, [0.1, 0.15, 0.2]) -> dout = 1, start = 0.1, end = 0.2
 #[derive(Debug)]
+#[derive(Clone)]
 struct Range {
 	start: f64,
 	end: f64
@@ -57,6 +58,18 @@ fn extract(full_data: BTreeMap<u32, Vec<f64>>, extracted_data: &mut BTreeMap<u32
 			end: max_delay
 		});
 	}
+}
+
+// The pedestal_width fn takes the extracted dataset and compute pedestal width for each set
+fn pedestal_width(input: BTreeMap<u32, Range>) -> Vec<(u32, f64)> {
+    let mut widths = Vec::new();
+	for code in 1..=252 {
+		let last = input[&(code-1)].end;
+		let first = input[&code].start;
+		let width: f64 = (((first + last) / 2.0) * 10f64.powi(4)).round() / 10f64.powi(4);
+        widths.push((code, width));
+	}
+    widths
 }
 
 fn main() {
@@ -76,8 +89,10 @@ fn main() {
 
         // STEP 3: Extract data to get first and last occurrence of each set
         extract(full_data.clone(), &mut extracted_data);
-        println!("{:?}", extracted_data);
+        // println!("{:?}", extracted_data);
     }
-
+    // STEP 4: Generate pedestal width between each set
+    let result = pedestal_width(extracted_data.clone());
+    println!("{:?}", result);
 
 }
