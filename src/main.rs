@@ -76,7 +76,7 @@ fn pedestal_width(input: BTreeMap<u32, Range>) -> Vec<(u32, f64)> {
     for code in 1..=252 {
         let last = input[&(code - 1)].end;
         let first = input[&code].start;
-        let width: f64 = (((first + last) / 2.0) * 10f64.powi(4)).round() / 10f64.powi(4);
+        let width: f64 = ((first + last) / 2.0);
         widths.push((code, width));
     }
     widths
@@ -92,7 +92,7 @@ fn dnl_gen(input: Vec<(u32, f64)>) -> Vec<(u32, f64)> {
     for code in 1..=251 {
         let end = input[code - 1].1;
         let front = input[code].1;
-        let width: f64 = ((front - end) * 10f64.powi(4)).round() / 10f64.powi(4); 
+        let width: f64 = (front - end); 
         data_widths.push((code as u32, width));
     }
     println!("{:?}", avg_code_width);
@@ -126,18 +126,18 @@ fn main() {
     for sweep_count in 0..=lin_sweep {
         // STEP 1: Parse number of lin_sweep.
         let sweep_count_format = format!("{:03}", sweep_count);
-        let delay = ((sweep_count as f64 * (7.0 / lin_sweep as f64)) * 10f64.powi(4)).round()
-            / 10f64.powi(4);
-        let path = format!("/tools/scratch/dwzhang/tdc_sky130_macros/tdc_64/tdc_64_sim.raw/sweepDelay-{sweep_count_format}_stepResponse.tran.tran");
+        let delay = (sweep_count as f64 * (10.0 / lin_sweep as f64));
+        let path = format!("/tools/scratch/dwzhang/tdc_sky130_macros/tdc_64/nda/tdc_64_pex_sim.raw/sweepDelay-{sweep_count_format}_stepResponse.tran.tran");
         let parsed_vec: Vec<(f64, u32)> = parse_vec(path, delay);
+        // println!("{:?}", parsed_vec);
 
         // STEP 2: Aggregate available sweeped data.
         aggregate(&parsed_vec, &mut full_data);
-        // println!("{:?}", full_data);
+        println!("{:?}", full_data);
 
         // STEP 3: Extract data to get first and last occurrence of each set.
         extract(full_data.clone(), &mut extracted_data);
-        // println!("{:?}", extracted_data);
+        println!("{:?}", extracted_data);
     }
     // STEP 4: Generate pedestal width between each set.
     let pedestal_width_data = pedestal_width(extracted_data.clone());
