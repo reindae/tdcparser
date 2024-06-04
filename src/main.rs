@@ -70,8 +70,8 @@ fn extract(full_data: BTreeMap<u32, Vec<f64>>, extracted_data: &mut BTreeMap<u32
     }
 }
 
-// The pedestal_width fn takes the extracted dataset and compute pedestal width for each set.
-fn pedestal_width(input: BTreeMap<u32, Range>) -> Vec<(u32, f64)> {
+// The transition_pt fn takes the extracted dataset and compute an estimate transition for each code.
+fn transition_pt(input: BTreeMap<u32, Range>) -> Vec<(u32, f64)> {
     let mut widths = Vec::new();
     for code in 1..=252 {
         let last = input[&(code - 1)].end;
@@ -82,20 +82,26 @@ fn pedestal_width(input: BTreeMap<u32, Range>) -> Vec<(u32, f64)> {
     widths
 }
 
-// The dnl_gen takes the pedestal width dataset and generate dnl dataset.
+// The dnl_gen takes the transition point dataset and generate dnl dataset.
 fn dnl_gen(input: Vec<(u32, f64)>) -> Vec<(u32, f64)> {
+    // 1. Take the first and the last transition of the transtion dataset to find average code width.
     let first_trans = input.first().map(|&(_, num)| num).unwrap();
     let last_trans = input.last().map(|&(_, num)| num).unwrap();
     let avg_code_width = (last_trans - first_trans) / 251.0;    // not rounding
+    println!("{:?}", avg_code_width);
+
+    // 2. Then, compute the pedestal width for each code using the pedestal transition.
     let mut data_widths = Vec::new();
-    let mut dnl_data = Vec::new();
     for code in 1..=251 {
         let end = input[code - 1].1;
         let front = input[code].1;
-        let width: f64 = (front - end); 
+        let width: f64 = (front - end);
+        println!("{:?}", width);
         data_widths.push((code as u32, width));
     }
-    println!("{:?}", avg_code_width);
+
+    // 3. Lastly, compute dnl using each code's width and the average code width.
+    let mut dnl_data = Vec::new();
     for code in 1..=251 {
         let dnl = (data_widths[code - 1].1 - avg_code_width) / avg_code_width;      // not rounding
         dnl_data.push((code as u32, dnl));
@@ -133,18 +139,18 @@ fn main() {
 
         // STEP 2: Aggregate available sweeped data.
         aggregate(&parsed_vec, &mut full_data);
-        println!("{:?}", full_data);
+        // println!("{:?}", full_data);
 
         // STEP 3: Extract data to get first and last occurrence of each set.
         extract(full_data.clone(), &mut extracted_data);
-        println!("{:?}", extracted_data);
+        // println!("{:?}", extracted_data);
     }
-    // STEP 4: Generate pedestal width between each set.
-    let pedestal_width_data = pedestal_width(extracted_data.clone());
-    println!("{:?}", pedestal_width_data);
+    // STEP 4: Generate transition point between each set.
+    let transition_pt_data = transition_pt(extracted_data.clone());
+    println!("{:?}", transition_pt_data);
 
     // STEP 5: Generate Differential Nonlinearity (DNL).
-    let dnl = dnl_gen(pedestal_width_data.clone());
+    let dnl = dnl_gen(transition_pt_data.clone());
     println!("{:?}", dnl);
 
     // STEP 6: Generate Integral Nonlinearity (INL).
